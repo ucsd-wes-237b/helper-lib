@@ -141,44 +141,37 @@ cl_int LoadStride(const char *dir, int *stride) {
 }
 
 
+// Writes the same text format LoadImgRaw reads, so images round-trip and a
+// saved result can be compared against a dataset reference directly.
 cl_int SaveImg(const char *path, Image* img)
 {
-    int count = img->shape[0] * img->shape[1] * 3;
-    unsigned char* data = (unsigned char *)malloc(img->shape[0] * img->shape[1] * IMAGE_CHANNELS * sizeof(char));
+    FILE *data_file;
 
-    for (int i = 0; i < count; i++)
-    {
-        data[i] = img->data[i] * 255;
-    }
-
-    FILE *fp;
-    //open file for output
-    fp = fopen(path, "wb");
-    if (!fp) {
-        fprintf(stderr, "Unable to open file '%s'\n", path);
+    data_file = fopen(path, "w");
+    if (!data_file) // Error opening file
         return CL_INVALID_VALUE;
+
+    unsigned int rows = img->shape[0];
+    unsigned int cols = img->shape[1];
+
+    // Callers are not required to populate shape[2], so the channel count
+    // comes from IMAGE_CHANNELS rather than the shape.
+    if (fprintf(data_file, "# (%u, %u, %u)\n", rows, cols, IMAGE_CHANNELS) < 0)
+        return CL_INVALID_VALUE; // Error writing dimensions
+
+    for (unsigned int r = 0; r < rows; r++)
+    {
+        for (unsigned int i = 0; i < cols * IMAGE_CHANNELS; i++)
+        {
+            if (fprintf(data_file, "%d ", img->data[cols * IMAGE_CHANNELS * r + i]) < 0)
+                return CL_INVALID_VALUE; // Error writing pixel data
+        }
+        fprintf(data_file, "\n");
     }
 
-    //write the header file
-    //image format
-    fprintf(fp, "P6\n");
+    fclose(data_file);
 
-    //comments
-    fprintf(fp, "# Created by %s\n", "CSE Helper Lib");
-
-    //image size
-    fprintf(fp, "%d %d\n",img->shape[1],img->shape[0]);
-
-    // rgb component depth
-    fprintf(fp, "%d\n", RGB_COMPONENT_COLOR);
-
-    // pixel data
-    fwrite(data, 3 * img->shape[0], img->shape[1], fp);
-    fclose(fp);
-
-    free(data);
-
-    return 0;
+    return CL_SUCCESS;
 }
 
 cl_int CheckImg(Image *truth, Image *student)
